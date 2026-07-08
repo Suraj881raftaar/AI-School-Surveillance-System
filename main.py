@@ -52,9 +52,9 @@ class MainApplication:
         self.update_clock()
 
         self.root.mainloop()
-            # ============================
+            # ============================"
     # Sidebar
-    # ============================
+    # ============================"
 
     def build_sidebar(self):
 
@@ -121,9 +121,9 @@ class MainApplication:
             ipady=8
         )
 
-    # ============================
+    # ============================"
     # Header
-    # ============================
+    # ============================"
 
     def build_header(self):
 
@@ -177,30 +177,26 @@ class MainApplication:
             1000,
             self.update_clock
         )
-            # =========================================
+            # ========================================="
     # Clear Content
-    # =========================================
+    # ========================================="
 
     def clear_content(self):
 
         for widget in self.content.winfo_children():
             widget.destroy()
 
-    # =========================================
+    # ========================================="
     # Dashboard
-    # =========================================
+    # ========================================="
 
     def show_dashboard(self):
+        self.load_module(
+            "dashboard",
+            "DashboardFrame",
+            "Dashboard"
+        )
 
-     self.load_module(
-
-        "dashboard",
-
-        "DashboardFrame",
-
-        "Dashboard"
-
-    )
     def create_card(self,parent,title):
 
         card = tk.Frame(
@@ -235,9 +231,9 @@ class MainApplication:
             fg=BUTTON_COLOR
         ).pack()
 
-    # =========================================
+    # ========================================="
     # Load Module
-    # =========================================
+    # ========================================="
 
     def load_module(self,module_name,class_name,title):
 
@@ -270,9 +266,9 @@ class MainApplication:
                 "Module Error",
                 str(e)
             )
-                # =========================================
+                # ========================================="
     # Navigation
-    # =========================================
+    # ========================================="
 
     def show_students(self):
 
@@ -322,9 +318,9 @@ class MainApplication:
             "Reports"
         )
 
-    # =========================================
+    # ========================================="
     # Dashboard Refresh
-    # =========================================
+    # ========================================="
 
     def refresh_dashboard(self):
 
@@ -339,9 +335,9 @@ class MainApplication:
                 pass
 
         self.show_dashboard()
-            # =========================================
+            # ========================================="
     # Refresh Dashboard Counts
-    # =========================================
+    # ========================================="
 
     def refresh_dashboard_metrics(self):
         """
@@ -352,9 +348,9 @@ class MainApplication:
         if self.page_title.cget("text") == "Dashboard":
             self.show_dashboard()
 
-    # =========================================
+    # ========================================="
     # Exit Application
-    # =========================================
+    # ========================================="
 
     def exit_application(self):
 
@@ -363,9 +359,9 @@ class MainApplication:
             "Do you really want to exit?"
         ):
             self.root.destroy()
-# =========================================
+# ========================================="
 # Run Application
-# =========================================
+# ========================================="
 
 def run_application():
 

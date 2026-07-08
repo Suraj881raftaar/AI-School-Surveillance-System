@@ -335,7 +335,7 @@ class StudentsFrame(ttk.Frame):
         ttk.Button(
             button_frame,
             text="Add Student",
-            command=self.add_students,
+            command=self.add_student,
             style="Success.TButton",
         ).grid(row=0, column=0, sticky="ew", padx=(0, 5), pady=5)
 
@@ -478,16 +478,16 @@ class StudentsFrame(ttk.Frame):
 
         self.refresh_dashboard()
 
-    def add_students(self) -> None:
+    def add_student(self) -> None:
         if not self.validate_form():
             return
 
-        if self.db.employee_id_exists(self.roll_no.get().strip()):
-            messagebox.showerror("Error", "Employee ID Already Exists")
+        if self.db.roll_no_exists(self.roll_no.get().strip()):
+            messagebox.showerror("Error", "Roll Number Already Exists")
             return
 
         try:
-            self.db.add_students(
+            self.db.add_student(
                 self.student_name.get().strip(),
                 self.roll_no.get().strip(),
                 self.class_name.get().strip(),
@@ -498,7 +498,7 @@ class StudentsFrame(ttk.Frame):
             self.clear()
             self.load_students()
         except sqlite3.IntegrityError:
-            messagebox.showerror("Error", "Employee ID Already Exists")
+            messagebox.showerror("Error", "Roll Number Already Exists")
         except sqlite3.Error as error:
             messagebox.showerror("Database Error", str(error))
 
@@ -510,11 +510,11 @@ class StudentsFrame(ttk.Frame):
         if not self.validate_form():
             return
 
-        if self.db.employee_id_exists(
+        if self.db.roll_no_exists(
             self.roll_no.get().strip(),
             self.selected_id,
         ):
-            messagebox.showerror("Error", "Employee ID Already Exists")
+            messagebox.showerror("Error", "Roll Number Already Exists")
             return
 
         try:
@@ -530,7 +530,7 @@ class StudentsFrame(ttk.Frame):
             self.clear()
             self.load_students()
         except sqlite3.IntegrityError:
-            messagebox.showerror("Error", "Employee ID Already Exists")
+            messagebox.showerror("Error", "Roll Number Already Exists")
         except sqlite3.Error as error:
             messagebox.showerror("Database Error", str(error))
 

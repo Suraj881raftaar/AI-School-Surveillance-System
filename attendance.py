@@ -8,6 +8,8 @@ from __future__ import annotations
 import csv
 import os
 import sqlite3
+import sys
+import subprocess
 import tkinter as tk
 from dataclasses import dataclass
 from datetime import datetime
@@ -678,11 +680,13 @@ class AttendanceFrame(ttk.Frame):
                 if os.name == "nt":
                     os.startfile(report_path, "print")
                 else:
-                    os.startfile(report_path)
+                    if sys.platform == "darwin":
+                        subprocess.Popen(["open", report_path])
+                    else:
+                        subprocess.Popen(["xdg-open", report_path])
+                messagebox.showinfo("Print Report", "Report sent to printer.")
             except (AttributeError, OSError):
                 messagebox.showinfo("Print Report", f"Report saved:\n{report_path}")
-            else:
-                messagebox.showinfo("Print Report", "Report sent to printer.")
         except OSError as error:
             messagebox.showerror("Print Report", str(error))
 
