@@ -116,6 +116,12 @@ Locate the generated executable inside the `dist/` directory.
 **Q: Database locked error?**
 * **A**: Close and restart the application. Connections are automatically managed with connection-closing wrappers.
 
+## 📅 Release History
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version logs.
+* **v1.0.1** (2026-07-09): Production Packaging & Runtime Stability Release.
+* **v1.0.0** (2026-07-09): Initial Stable Production Release.
+
 ---
 
 ## 💳 Credits & License
