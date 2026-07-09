@@ -186,6 +186,8 @@ class MainApplication:
         for widget in self.content.winfo_children():
             widget.destroy()
 
+        self.current_frame = None
+
     # =========================================
     # Dashboard
     # =========================================

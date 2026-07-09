@@ -542,6 +542,15 @@ class SurveillanceFrame(ttk.Frame):
         if self.worker_thread is not None and self.worker_thread.is_alive():
             self.worker_thread.join(timeout=1.5)
 
+        worker_alive = (
+            self.worker_thread is not None
+            and self.worker_thread.is_alive()
+        )
+
+        if worker_alive:
+            self.status_text.set("Stopping camera...")
+            return
+
         if self.camera is not None:
             self.camera.release()
             self.camera = None
@@ -555,51 +564,53 @@ class SurveillanceFrame(ttk.Frame):
         camera = self.cv2.VideoCapture(CAMERA_INDEX)
         self.camera = camera
 
-        if not camera.isOpened():
+        try:
+            if not camera.isOpened():
+                self.queue_status("Camera not available.")
+                return
+
+            camera.set(self.cv2.CAP_PROP_FRAME_WIDTH, 960)
+            camera.set(self.cv2.CAP_PROP_FRAME_HEIGHT, 540)
+            self.queue_status("Camera started.")
+
+            last_tick = time.perf_counter()
+            fps_average = 0.0
+
+            while not self.stop_event.is_set():
+                success, frame = camera.read()
+                if not success:
+                    self.queue_status("Unable to read camera frame.")
+                    time.sleep(0.05)
+                    continue
+
+                frame = self.cv2.flip(frame, 1)
+                processed_frame, has_face, label_text, unknown_detected = self.process_frame(
+                    frame
+                )
+
+                now_tick = time.perf_counter()
+                elapsed = max(now_tick - last_tick, 0.001)
+                instant_fps = 1.0 / elapsed
+                last_tick = now_tick
+                fps_average = instant_fps if fps_average == 0.0 else (
+                    (fps_average * 0.85) + (instant_fps * 0.15)
+                )
+
+                self.queue_frame(processed_frame, has_face, label_text, fps_average)
+
+                if unknown_detected:
+                    self.create_unknown_alert(processed_frame)
+
+                time.sleep(0.01)
+        except Exception as error:
+            self.queue_status(f"Camera error: {error}")
+        finally:
             camera.release()
-            self.camera = None
+            if self.camera is camera:
+                self.camera = None
             self.camera_running = False
-            self.queue_status("Camera not available.")
-            return
-
-        camera.set(self.cv2.CAP_PROP_FRAME_WIDTH, 960)
-        camera.set(self.cv2.CAP_PROP_FRAME_HEIGHT, 540)
-        self.queue_status("Camera started.")
-
-        last_tick = time.perf_counter()
-        fps_average = 0.0
-
-        while not self.stop_event.is_set():
-            success, frame = camera.read()
-            if not success:
-                self.queue_status("Unable to read camera frame.")
-                time.sleep(0.05)
-                continue
-
-            frame = self.cv2.flip(frame, 1)
-            processed_frame, has_face, label_text, unknown_detected = self.process_frame(
-                frame
-            )
-
-            now_tick = time.perf_counter()
-            elapsed = max(now_tick - last_tick, 0.001)
-            instant_fps = 1.0 / elapsed
-            last_tick = now_tick
-            fps_average = instant_fps if fps_average == 0.0 else (
-                (fps_average * 0.85) + (instant_fps * 0.15)
-            )
-
-            self.queue_frame(processed_frame, has_face, label_text, fps_average)
-
-            if unknown_detected:
-                self.create_unknown_alert(processed_frame)
-
-            time.sleep(0.01)
-
-        camera.release()
-        self.camera = None
-        self.camera_running = False
-        self.queue_status("Camera stopped.")
+            if self.stop_event.is_set():
+                self.queue_status("Camera stopped.")
 
     def process_frame(self, frame):
         gray = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2GRAY)
@@ -808,19 +819,15 @@ class SurveillanceFrame(ttk.Frame):
         if self.app is None:
             return
 
-        active_route = getattr(self.app, "active_route", None)
-        if active_route is not None and hasattr(active_route, "get"):
-            try:
-                if active_route.get() != "Dashboard":
-                    return
-            except tk.TclError:
-                return
-
         try:
-            if hasattr(self.app, "refresh_dashboard"):
-                self.app.refresh_dashboard()
-            elif hasattr(self.app, "refresh_dashboard_metrics"):
+            if hasattr(self.app, "refresh_dashboard_metrics"):
                 self.app.refresh_dashboard_metrics()
+            elif (
+                hasattr(self.app, "refresh_dashboard")
+                and hasattr(self.app, "page_title")
+                and self.app.page_title.cget("text") == "Dashboard"
+            ):
+                self.app.refresh_dashboard()
         except tk.TclError:
             pass
 

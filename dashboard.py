@@ -21,6 +21,7 @@ class DashboardFrame(ttk.Frame):
         self.app = app
 
         self.repo = DashboardRepository()
+        self.refresh_after_id = None
 
         self.configure(style="Dashboard.TFrame")
 
@@ -205,6 +206,15 @@ class DashboardFrame(ttk.Frame):
     # ==========================================
 
     def refresh_dashboard(self):
+        if not self.winfo_exists():
+            return
+
+        if self.refresh_after_id is not None:
+            try:
+                self.after_cancel(self.refresh_after_id)
+            except tk.TclError:
+                pass
+            self.refresh_after_id = None
 
         metrics = self.repo.metrics()
 
@@ -241,7 +251,7 @@ class DashboardFrame(ttk.Frame):
         )
         self.build_recent_tables()
 
-        self.after(
+        self.refresh_after_id = self.after(
             5000,
             self.refresh_dashboard
         )
@@ -353,3 +363,13 @@ class DashboardFrame(ttk.Frame):
         for row in self.repo.latest_alerts():
 
             alerts.insert("", "end", values=tuple(row))
+
+    def destroy(self):
+        if self.refresh_after_id is not None:
+            try:
+                self.after_cancel(self.refresh_after_id)
+            except tk.TclError:
+                pass
+            self.refresh_after_id = None
+
+        super().destroy()

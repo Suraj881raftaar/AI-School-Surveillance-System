@@ -267,6 +267,8 @@ class ReportsFrame(ttk.Frame):
         for item in self.alert_table.get_children():
             self.alert_table.delete(item)
 
+        conn = None
+
         try:
 
             conn = sqlite3.connect(DATABASE_PATH)
@@ -320,14 +322,17 @@ class ReportsFrame(ttk.Frame):
                     values=row
                 )
 
-            conn.close()
-
         except Exception as e:
 
             messagebox.showerror(
                 "Database Error",
                 str(e)
             )
+        finally:
+
+            if conn is not None:
+
+                conn.close()
 
     # ==========================================
     # Search Reports
@@ -347,6 +352,8 @@ class ReportsFrame(ttk.Frame):
 
         for item in self.alert_table.get_children():
             self.alert_table.delete(item)
+
+        conn = None
 
         try:
 
@@ -415,14 +422,17 @@ class ReportsFrame(ttk.Frame):
                     values=row
                 )
 
-            conn.close()
-
         except Exception as e:
 
             messagebox.showerror(
                 "Search Error",
                 str(e)
             )
+        finally:
+
+            if conn is not None:
+
+                conn.close()
                 # ==========================================
     # Export Attendance to CSV
     # ==========================================
@@ -437,6 +447,8 @@ class ReportsFrame(ttk.Frame):
 
         if not filename:
             return
+
+        conn = None
 
         try:
 
@@ -457,8 +469,6 @@ class ReportsFrame(ttk.Frame):
             """)
 
             rows = cur.fetchall()
-
-            conn.close()
 
             with open(
                 filename,
@@ -491,6 +501,11 @@ class ReportsFrame(ttk.Frame):
                 "Export Error",
                 str(e)
             )
+        finally:
+
+            if conn is not None:
+
+                conn.close()
                 # ==========================================
     # Export Attendance to Excel
     # ==========================================
@@ -514,6 +529,8 @@ class ReportsFrame(ttk.Frame):
 
         if not filename:
             return
+
+        conn = None
 
         try:
 
@@ -550,8 +567,6 @@ class ReportsFrame(ttk.Frame):
 
             rows = cur.fetchall()
 
-            conn.close()
-
             for row in rows:
 
                 sheet.append(row)
@@ -569,3 +584,8 @@ class ReportsFrame(ttk.Frame):
                 "Export Error",
                 str(e)
             )
+        finally:
+
+            if conn is not None:
+
+                conn.close()

@@ -746,19 +746,15 @@ class AttendanceFrame(ttk.Frame):
         if self.app is None:
             return
 
-        active_route = getattr(self.app, "active_route", None)
-        if active_route is not None and hasattr(active_route, "get"):
-            try:
-                if active_route.get() != "Dashboard":
-                    return
-            except tk.TclError:
-                return
-
         try:
-            if hasattr(self.app, "refresh_dashboard"):
-                self.app.refresh_dashboard()
-            elif hasattr(self.app, "refresh_dashboard_metrics"):
+            if hasattr(self.app, "refresh_dashboard_metrics"):
                 self.app.refresh_dashboard_metrics()
+            elif (
+                hasattr(self.app, "refresh_dashboard")
+                and hasattr(self.app, "page_title")
+                and self.app.page_title.cget("text") == "Dashboard"
+            ):
+                self.app.refresh_dashboard()
         except tk.TclError:
             pass
 

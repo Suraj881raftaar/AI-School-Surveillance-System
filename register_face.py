@@ -28,6 +28,8 @@ class RegisterFaceFrame(ttk.Frame):
         self.app = app
 
         self.cap = None
+        self.face_detector = None
+        self.show_camera_after_id = None
 
         self.person_type = tk.StringVar(value="Student")
 
@@ -201,43 +203,41 @@ class RegisterFaceFrame(ttk.Frame):
 
         try:
 
-            conn = sqlite3.connect(DATABASE_PATH)
+            with sqlite3.connect(DATABASE_PATH) as conn:
 
-            cur = conn.cursor()
+                cur = conn.cursor()
 
-            if self.person_type.get() == "Student":
+                if self.person_type.get() == "Student":
 
-                cur.execute("""
+                    cur.execute("""
 
-                    SELECT student_name
+                        SELECT student_name
 
-                    FROM students
+                        FROM students
 
-                    ORDER BY student_name
+                        ORDER BY student_name
 
-                """)
+                    """)
 
-            else:
+                else:
 
-                cur.execute("""
+                    cur.execute("""
 
-                    SELECT teacher_name
+                        SELECT teacher_name
 
-                    FROM teachers
+                        FROM teachers
 
-                    ORDER BY teacher_name
+                        ORDER BY teacher_name
 
-                """)
+                    """)
 
-            names = [
+                names = [
 
-                row[0]
+                    row[0]
 
-                for row in cur.fetchall()
+                    for row in cur.fetchall()
 
-            ]
-
-            conn.close()
+                ]
 
             self.person_combo["values"] = names
 
@@ -255,14 +255,48 @@ class RegisterFaceFrame(ttk.Frame):
 
             )
                 # ==========================================
+    # Load Face Detector
+    # ==========================================
+
+    def load_face_detector(self):
+
+        detector = cv2.CascadeClassifier(
+            HAARCASCADE_PATH
+        )
+
+        if detector.empty():
+
+            messagebox.showerror(
+                "Camera Error",
+                "Face detector could not be loaded."
+            )
+
+            return False
+
+        self.face_detector = detector
+
+        return True
+                # ==========================================
     # Start Camera
     # ==========================================
 
     def start_camera(self):
 
+        if self.cap is not None:
+
+            return
+
+        if not self.load_face_detector():
+
+            return
+
         self.cap = cv2.VideoCapture(CAMERA_INDEX)
 
         if not self.cap.isOpened():
+
+            self.cap.release()
+
+            self.cap = None
 
             messagebox.showerror(
                 "Camera Error",
@@ -301,7 +335,7 @@ class RegisterFaceFrame(ttk.Frame):
 
             self.camera_label.image = photo
 
-        self.after(
+        self.show_camera_after_id = self.after(
             10,
             self.show_camera
         )
@@ -310,6 +344,18 @@ class RegisterFaceFrame(ttk.Frame):
     # ==========================================
 
     def stop_camera(self):
+
+        if self.show_camera_after_id is not None:
+
+            try:
+
+                self.after_cancel(self.show_camera_after_id)
+
+            except tk.TclError:
+
+                pass
+
+            self.show_camera_after_id = None
 
         if self.cap:
 
@@ -320,9 +366,16 @@ class RegisterFaceFrame(ttk.Frame):
         self.camera_label.configure(
             image=""
         )
-        self.face_detector = cv2.CascadeClassifier(
-    HAARCASCADE_PATH
-)
+
+        self.camera_label.image = None
+
+        try:
+
+            cv2.destroyWindow("Capturing Faces")
+
+        except cv2.error:
+
+            pass
        # ==========================================
     # Capture 50 Face Images
     # ==========================================
@@ -335,6 +388,10 @@ class RegisterFaceFrame(ttk.Frame):
                 "Camera",
                 "Please start the camera first."
             )
+
+            return
+
+        if self.face_detector is None and not self.load_face_detector():
 
             return
 
@@ -361,71 +418,87 @@ class RegisterFaceFrame(ttk.Frame):
 
         self.capture_count = 0
 
-        while self.capture_count < self.max_images:
+        try:
 
-            ret, frame = self.cap.read()
+            while self.capture_count < self.max_images:
 
-            if not ret:
-                continue
+                ret, frame = self.cap.read()
 
-            gray = cv2.cvtColor(
-                frame,
-                cv2.COLOR_BGR2GRAY
-            )
+                if not ret:
+                    continue
 
-            faces = self.face_detector.detectMultiScale(
-                gray,
-                scaleFactor=1.3,
-                minNeighbors=5
-            )
-
-            for (x, y, w, h) in faces:
-
-                face = gray[y:y+h, x:x+w]
-
-                face = cv2.resize(
-                    face,
-                    (200, 200)
-                )
-
-                self.capture_count += 1
-
-                filename = os.path.join(
-                    save_folder,
-                    f"{self.capture_count}.jpg"
-                )
-
-                cv2.imwrite(
-                    filename,
-                    face
-                )
-
-                self.progress.config(
-                    text=f"Captured : {self.capture_count} / {self.max_images}"
-                )
-
-                self.update()
-
-                cv2.rectangle(
+                gray = cv2.cvtColor(
                     frame,
-                    (x, y),
-                    (x+w, y+h),
-                    (0,255,0),
-                    2
+                    cv2.COLOR_BGR2GRAY
                 )
 
-                break
+                faces = self.face_detector.detectMultiScale(
+                    gray,
+                    scaleFactor=1.3,
+                    minNeighbors=5
+                )
 
-            cv2.imshow(
-                "Capturing Faces",
-                frame
-            )
+                for (x, y, w, h) in faces:
 
-            cv2.waitKey(50)
+                    face = gray[y:y+h, x:x+w]
 
-        cv2.destroyWindow("Capturing Faces")
+                    face = cv2.resize(
+                        face,
+                        (200, 200)
+                    )
+
+                    self.capture_count += 1
+
+                    filename = os.path.join(
+                        save_folder,
+                        f"{self.capture_count}.jpg"
+                    )
+
+                    cv2.imwrite(
+                        filename,
+                        face
+                    )
+
+                    self.progress.config(
+                        text=f"Captured : {self.capture_count} / {self.max_images}"
+                    )
+
+                    self.update()
+
+                    cv2.rectangle(
+                        frame,
+                        (x, y),
+                        (x+w, y+h),
+                        (0,255,0),
+                        2
+                    )
+
+                    break
+
+                cv2.imshow(
+                    "Capturing Faces",
+                    frame
+                )
+
+                cv2.waitKey(50)
+
+        finally:
+
+            try:
+
+                cv2.destroyWindow("Capturing Faces")
+
+            except cv2.error:
+
+                pass
 
         messagebox.showinfo(
             "Completed",
             f"{self.max_images} face images captured successfully."
         )
+
+    def destroy(self):
+
+        self.stop_camera()
+
+        super().destroy()

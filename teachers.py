@@ -625,49 +625,51 @@ class TeachersFrame(ttk.Frame):
         camera = cv2.VideoCapture(CAMERA_INDEX)
 
         if not camera.isOpened():
+            camera.release()
             messagebox.showerror("Error", "Camera not available")
             return
 
         count = 0
 
-        while True:
-            ret, frame = camera.read()
+        try:
+            while True:
+                ret, frame = camera.read()
 
-            if not ret:
-                break
+                if not ret:
+                    break
 
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = face_detector.detectMultiScale(gray, 1.3, 5)
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = face_detector.detectMultiScale(gray, 1.3, 5)
 
-            for (x, y, w, h) in faces:
-                count += 1
-                face = gray[y : y + h, x : x + w]
-                face = cv2.resize(face, (FACE_WIDTH, FACE_HEIGHT))
+                for (x, y, w, h) in faces:
+                    count += 1
+                    face = gray[y : y + h, x : x + w]
+                    face = cv2.resize(face, (FACE_WIDTH, FACE_HEIGHT))
 
-                cv2.imwrite(
-                    os.path.join(save_folder, f"{count}.jpg"),
-                    face,
-                )
+                    cv2.imwrite(
+                        os.path.join(save_folder, f"{count}.jpg"),
+                        face,
+                    )
 
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.putText(
-                    frame,
-                    str(count),
-                    (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (0, 255, 0),
-                    2,
-                )
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.putText(
+                        frame,
+                        str(count),
+                        (x, y - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 255, 0),
+                        2,
+                    )
 
-            cv2.imshow("Capture Face", frame)
-            key = cv2.waitKey(1)
+                cv2.imshow("Capture Face", frame)
+                key = cv2.waitKey(1)
 
-            if key == 13 or count >= 30:
-                break
-
-        camera.release()
-        cv2.destroyAllWindows()
+                if key == 13 or count >= 30:
+                    break
+        finally:
+            camera.release()
+            cv2.destroyAllWindows()
 
         self.image_path.set(save_folder)
         self.face_status.configure(text="Captured")
