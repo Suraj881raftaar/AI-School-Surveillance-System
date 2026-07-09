@@ -263,8 +263,16 @@ class CameraController:
                         else:
                             cv2.putText(frame, "Pipeline Processing Error", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-                # Send frame data to UI
-                self.queue.put(("frame_data", frame, self.capture_count))
+                # Convert BGR frame to RGB for Tkinter compatibility before queueing
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                # Send frame data to UI safely using non-blocking put with oldest discard
+                try:
+                    if self.queue.full():
+                        self.queue.get_nowait()
+                    self.queue.put_nowait(("frame_data", frame_rgb, self.capture_count))
+                except (queue.Full, queue.Empty):
+                    pass
                 time.sleep(0.01)
         except Exception as e:
             if not self.stop_event.is_set():
@@ -508,94 +516,59 @@ class RegisterFaceFrame(ttk.Frame):
 
     def load_people(self):
 
+        conn = None
         try:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cur = conn.cursor()
 
-            with sqlite3.connect(DATABASE_PATH) as conn:
-
-                cur = conn.cursor()
-
-                if self.person_type.get() == "Student":
-
-                    cur.execute("""
-                        SELECT id, student_name, roll_no
-                        FROM students
-                        ORDER BY student_name
-                    """)
-                    self.people_data = cur.fetchall()
-                    names = [
-                        f"ID: {row[0]} | {row[1]} (Roll: {row[2]})"
-                        for row in self.people_data
-                    ]
-
-                else:
-
-                    cur.execute("""
-                        SELECT id, teacher_name, employee_id
-                        FROM teachers
-                        ORDER BY teacher_name
-                    """)
-                    self.people_data = cur.fetchall()
-                    names = [
-                        f"ID: {row[0]} | {row[1]} (Emp ID: {row[2]})"
-                        for row in self.people_data
-                    ]
+            if self.person_type.get() == "Student":
+                cur.execute("""
+                    SELECT id, student_name, roll_no
+                    FROM students
+                    ORDER BY student_name
+                """)
+                self.people_data = cur.fetchall()
+                names = [
+                    f"ID: {row[0]} | {row[1]} (Roll: {row[2]})"
+                    for row in self.people_data
+                ]
+            else:
+                cur.execute("""
+                    SELECT id, teacher_name, employee_id
+                    FROM teachers
+                    ORDER BY teacher_name
+                """)
+                self.people_data = cur.fetchall()
+                names = [
+                    f"ID: {row[0]} | {row[1]} (Emp ID: {row[2]})"
+                    for row in self.people_data
+                ]
 
             self.person_combo["values"] = names
 
             if names:
-
                 self.person_combo.current(0)
             else:
                 self.person_combo.set("")
                 self.people_data = []
 
         except Exception as e:
-
             messagebox.showerror(
                 "Database Error",
                 str(e)
             )
+        finally:
+            if conn is not None:
+                conn.close()
     def populate_camera_selector(self) -> None:
-        """Scan camera ports 0-3 to identify active devices and populate the combobox."""
-        available_cameras = []
-        for index in range(4):
-            cap = cv2.VideoCapture(index)
-            if cap.isOpened():
-                available_cameras.append(str(index))
-                cap.release()
-
-        if not available_cameras:
-            available_cameras = ["0"]
-
+        """Populate the camera selector with standard port indices, avoiding blocking main-thread scans."""
+        available_cameras = ["0", "1", "2", "3"]
         self.camera_selector["values"] = available_cameras
         default_idx = str(CAMERA_INDEX)
         if default_idx in available_cameras:
             self.camera_selector.set(default_idx)
         else:
             self.camera_selector.set(available_cameras[0])
-
-    # ==========================================
-    # Load Face Detector
-    # ==========================================
-
-    def load_face_detector(self):
-
-        detector = cv2.CascadeClassifier(
-            HAARCASCADE_PATH
-        )
-
-        if detector.empty():
-
-            messagebox.showerror(
-                "Camera Error",
-                "Face detector could not be loaded."
-            )
-
-            return False
-
-        self.face_detector = detector
-
-        return True
                 # ==========================================
     # Start Camera
     # ==========================================
@@ -642,9 +615,7 @@ class RegisterFaceFrame(ttk.Frame):
                     self.remaining_images_text.set(f"Remaining: {50 - count}")
                     self.progress_bar["value"] = count
 
-                    # Convert BGR to RGB for PIL compatibility
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    img = Image.fromarray(rgb_frame)
+                    img = Image.fromarray(frame)
                     # Resize preview frame to fit layout
                     img = img.resize((700, 500))
                     photo = ImageTk.PhotoImage(image=img)
