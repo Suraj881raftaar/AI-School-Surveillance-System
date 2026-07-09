@@ -28,6 +28,9 @@ class DetectionResult:
     name: str
     confidence: float | None
     is_known: bool
+    person_type: str = "Unknown"
+    status: str = "Unknown"
+    person_id: int | None = None
 
 
 class SurveillanceDB:
@@ -126,13 +129,16 @@ class SurveillanceDB:
 
 
 class FutureFaceRecognizer:
-    """Optional recognizer hook for future trained models."""
+    """Loads trained LBPH model trainer.yml and retrieves labels.json metadata mapping."""
 
-    def __init__(self, cv2_module) -> None:
+    def __init__(self, cv2_module, confidence_threshold=65.0, low_confidence_threshold=85.0) -> None:
         self.cv2 = cv2_module
         self.recognizer = None
         self.labels: dict[int, str] = {}
+        self.labels_metadata: dict[int, dict] = {}
         self.available = False
+        self.confidence_threshold = confidence_threshold
+        self.low_confidence_threshold = low_confidence_threshold
         self.load()
 
     def load(self) -> None:
@@ -159,32 +165,50 @@ class FutureFaceRecognizer:
             try:
                 raw_labels = json.loads(labels_path.read_text(encoding="utf-8"))
                 self.labels = {}
+                self.labels_metadata = {}
                 for label_id, val in raw_labels.items():
                     if isinstance(val, dict):
                         person_name = val.get("name", f"Person {label_id}")
+                        self.labels_metadata[int(label_id)] = val
                     else:
                         person_name = str(val)
+                        self.labels_metadata[int(label_id)] = {
+                            "name": person_name,
+                            "person_type": "Student"
+                        }
                     self.labels[int(label_id)] = person_name
             except (OSError, ValueError, TypeError):
                 self.labels = {}
+                self.labels_metadata = {}
 
     def recognize(self, face_gray) -> DetectionResult:
         if not self.available or self.recognizer is None:
-            return DetectionResult("Unknown", None, False)
+            return DetectionResult("Unknown", None, False, "Unknown", "Unknown", None)
 
         try:
             label_id, confidence = self.recognizer.predict(face_gray)
         except Exception:
-            return DetectionResult("Unknown", None, False)
+            return DetectionResult("Unknown", None, False, "Unknown", "Unknown", None)
 
-        if confidence <= 70:
-            return DetectionResult(
-                self.labels.get(int(label_id), f"Person {label_id}"),
-                float(confidence),
-                True,
-            )
+        metadata = self.labels_metadata.get(int(label_id), {})
+        name = metadata.get("name", f"Person {label_id}")
+        person_type = metadata.get("person_type", "Student")
+        person_id = metadata.get("id", None)
 
-        return DetectionResult("Unknown", float(confidence), False)
+        # Retrieve base integer ID if not present in JSON
+        if person_id is None:
+            if label_id >= 2000:
+                person_id = label_id - 2000
+            elif label_id >= 1000:
+                person_id = label_id - 1000
+
+        # LBPH output is distance metric (smaller = more confident)
+        if confidence < self.confidence_threshold:
+            return DetectionResult(name, float(confidence), True, person_type, "Recognized", person_id)
+        elif confidence < self.low_confidence_threshold:
+            return DetectionResult(name, float(confidence), True, person_type, "Low Confidence", person_id)
+        else:
+            return DetectionResult("Unknown", float(confidence), False, "Unknown", "Unknown", None)
 
 
 class SurveillanceFrame(ttk.Frame):
@@ -216,6 +240,10 @@ class SurveillanceFrame(ttk.Frame):
         self.status_text = tk.StringVar(value="Camera stopped.")
         self.face_status = tk.StringVar(value="No Face")
         self.counter_text = tk.StringVar(value="Detections: 0")
+        self.recognized_counter_text = tk.StringVar(value="Recognized: 0")
+        self.unknown_counter_text = tk.StringVar(value="Unknown: 0")
+        self.average_confidence_text = tk.StringVar(value="Conf Distance: N/A")
+        self.confidence_threshold_var = tk.DoubleVar(value=65.0)
         self.fps_text = tk.StringVar(value="FPS: 0.0")
 
         self.configure(style="Surveillance.TFrame")
@@ -361,12 +389,31 @@ class SurveillanceFrame(ttk.Frame):
             metrics,
             textvariable=self.counter_text,
             style="SurveillanceMetric.TLabel",
-        ).grid(row=0, column=0, padx=(0, 14))
+        ).grid(row=0, column=0, padx=(0, 10))
+        
+        ttk.Label(
+            metrics,
+            textvariable=self.recognized_counter_text,
+            style="SurveillanceMetric.TLabel",
+        ).grid(row=0, column=1, padx=(0, 10))
+        
+        ttk.Label(
+            metrics,
+            textvariable=self.unknown_counter_text,
+            style="SurveillanceMetric.TLabel",
+        ).grid(row=0, column=2, padx=(0, 10))
+        
+        ttk.Label(
+            metrics,
+            textvariable=self.average_confidence_text,
+            style="SurveillanceMetric.TLabel",
+        ).grid(row=0, column=3, padx=(0, 10))
+        
         ttk.Label(
             metrics,
             textvariable=self.fps_text,
             style="SurveillanceMetric.TLabel",
-        ).grid(row=0, column=1)
+        ).grid(row=0, column=4)
 
         preview_container = tk.Frame(panel, bg="#0B1220", bd=0, highlightthickness=0)
         preview_container.grid(row=1, column=0, sticky="nsew")
@@ -409,6 +456,77 @@ class SurveillanceFrame(ttk.Frame):
             text="Clear Alerts",
             command=self.clear_alerts,
         ).grid(row=0, column=3, sticky="ew", padx=(5, 0))
+
+        # Slider and Switcher controls frame
+        slider_frame = ttk.Frame(controls, style="SurveillancePanel.TFrame")
+        slider_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        slider_frame.grid_columnconfigure(1, weight=1)
+        
+        tk.Label(
+            slider_frame, 
+            text="Conf Threshold:", 
+            bg=WHITE, 
+            font=("Arial", 10, "bold")
+        ).grid(row=0, column=0, sticky="w", padx=(0, 10))
+        
+        self.confidence_slider = ttk.Scale(
+            slider_frame,
+            from_=30.0,
+            to=120.0,
+            value=65.0,
+            variable=self.confidence_threshold_var,
+            orient="horizontal",
+            command=self.update_threshold_from_slider
+        )
+        self.confidence_slider.grid(row=0, column=1, sticky="ew", padx=10)
+        
+        self.slider_val_lbl = tk.Label(slider_frame, text="65.0", bg=WHITE, font=("Arial", 10, "bold"), fg=BUTTON_COLOR)
+        self.slider_val_lbl.grid(row=0, column=2, sticky="e", padx=(10, 20))
+
+        tk.Label(
+            slider_frame, 
+            text="Device Index:", 
+            bg=WHITE, 
+            font=("Arial", 10, "bold")
+        ).grid(row=0, column=3, sticky="w", padx=(10, 10))
+
+        self.camera_selector = ttk.Combobox(
+            slider_frame,
+            textvariable=self.camera_index_var,
+            values=["0", "1", "2", "3"],
+            state="readonly",
+            width=5
+        )
+        self.camera_selector.grid(row=0, column=4, sticky="w")
+
+    def update_threshold_from_slider(self, val) -> None:
+        try:
+            threshold = float(val)
+            self.slider_val_lbl.configure(text=f"{threshold:.1f}")
+            if self.face_recognizer is not None:
+                self.face_recognizer.confidence_threshold = threshold
+                self.face_recognizer.low_confidence_threshold = threshold + 20.0
+        except Exception:
+            pass
+
+    def trigger_attendance_logging(self, person_id: int, person_type: str, name: str) -> None:
+        """
+        API Hook for future attendance logging module (Phase 5).
+        Logs a recognized student/teacher transaction.
+        """
+        print(f"[Attendance Hook] Exposing record to attendance tracker: {person_type} ID={person_id} Name={name}")
+
+    def log_event(self, message: str, level: str = "INFO") -> None:
+        """Log event message to logs/surveillance_log.txt."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] {level}: {message}\n"
+        log_file = os.path.join(LOG_FOLDER, "surveillance_log.txt")
+        try:
+            os.makedirs(LOG_FOLDER, exist_ok=True)
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(log_line)
+        except Exception:
+            pass
 
     def create_alert_panel(self) -> None:
         panel = ttk.Frame(self, style="SurveillancePanel.TFrame", padding=18)
@@ -519,6 +637,16 @@ class SurveillanceFrame(ttk.Frame):
             self.status_text.set("Camera is already running.")
             return
 
+        # Check model files exist first
+        model_path = Path(MODEL_FOLDER) / "trainer.yml"
+        labels_path = Path(MODEL_FOLDER) / "labels.json"
+        if not model_path.exists() or not labels_path.exists():
+            messagebox.showerror(
+                "Model Error",
+                "Trained face recognition model not found.\n\nPlease go to 'Face Training' tab first and build the model."
+            )
+            return
+
         if not self.load_cv_dependencies():
             return
 
@@ -527,10 +655,29 @@ class SurveillanceFrame(ttk.Frame):
             messagebox.showerror("Camera Error", "Haar cascade face detector not found.")
             return
 
-        self.face_recognizer = FutureFaceRecognizer(self.cv2)
+        # Load Face recognizer using slider threshold
+        try:
+            threshold = float(self.confidence_threshold_var.get())
+        except Exception:
+            threshold = 65.0
+
+        try:
+            self.face_recognizer = FutureFaceRecognizer(
+                self.cv2,
+                confidence_threshold=threshold,
+                low_confidence_threshold=threshold + 20.0
+            )
+            if not self.face_recognizer.available:
+                raise ValueError("Model initialization error.")
+        except Exception as e:
+            self.log_event(f"Model load failure: {e}", "ERROR")
+            messagebox.showerror("Model Loading Failure", f"Failed to load trained model files:\n{e}")
+            return
+
         self.stop_event.clear()
         self.camera_running = True
         self.status_text.set("Starting camera...")
+        self.log_event("Starting surveillance camera stream.", "INFO")
 
         self.worker_thread = threading.Thread(target=self.detect_faces, daemon=True)
         self.worker_thread.start()
@@ -562,34 +709,67 @@ class SurveillanceFrame(ttk.Frame):
         self.camera_running = False
         self.face_status.set("No Face")
         self.status_text.set("Camera stopped.")
+        self.log_event("Surveillance camera stream stopped.", "INFO")
 
     def detect_faces(self) -> None:
-        camera = self.cv2.VideoCapture(CAMERA_INDEX)
+        # Get index dynamically from Combobox Var
+        try:
+            cam_idx = int(self.camera_index_var.get())
+        except Exception:
+            cam_idx = CAMERA_INDEX
+
+        camera = self.cv2.VideoCapture(cam_idx)
         self.camera = camera
 
         try:
             if not camera.isOpened():
                 self.queue_status("Camera not available.")
+                self.log_event(f"Camera index {cam_idx} is not available.", "ERROR")
                 return
 
             camera.set(self.cv2.CAP_PROP_FRAME_WIDTH, 960)
             camera.set(self.cv2.CAP_PROP_FRAME_HEIGHT, 540)
             self.queue_status("Camera started.")
+            self.log_event(f"Camera index {cam_idx} started successfully.", "INFO")
 
             last_tick = time.perf_counter()
             fps_average = 0.0
+            reconnect_attempts = 0
 
             while not self.stop_event.is_set():
                 success, frame = camera.read()
                 if not success:
-                    self.queue_status("Unable to read camera frame.")
-                    time.sleep(0.05)
+                    # Connection loss: Attempt reconnect
+                    self.queue_status("Loss of camera connection. Attempting to reconnect...")
+                    self.log_event("Camera read error. Attempting camera reconnection...", "WARNING")
+                    camera.release()
+                    time.sleep(2.0)
+
+                    camera = self.cv2.VideoCapture(cam_idx)
+                    if not camera.isOpened():
+                        reconnect_attempts += 1
+                        self.queue_status(f"Reconnect attempt {reconnect_attempts} failed...")
+                        continue
+
+                    camera.set(self.cv2.CAP_PROP_FRAME_WIDTH, 960)
+                    camera.set(self.cv2.CAP_PROP_FRAME_HEIGHT, 540)
+                    self.camera = camera
+                    self.queue_status("Camera reconnected.")
+                    self.log_event("Camera reconnected successfully.", "INFO")
+                    reconnect_attempts = 0
                     continue
 
                 frame = self.cv2.flip(frame, 1)
-                processed_frame, has_face, label_text, unknown_detected = self.process_frame(
-                    frame
-                )
+                
+                # Run recognition pipeline
+                (
+                    processed_frame,
+                    detected_count,
+                    recognized_count,
+                    unknown_count,
+                    avg_confidence,
+                    unknown_detected
+                ) = self.process_frame(frame)
 
                 now_tick = time.perf_counter()
                 elapsed = max(now_tick - last_tick, 0.001)
@@ -599,7 +779,14 @@ class SurveillanceFrame(ttk.Frame):
                     (fps_average * 0.85) + (instant_fps * 0.15)
                 )
 
-                self.queue_frame(processed_frame, has_face, label_text, fps_average)
+                self.queue_frame(
+                    processed_frame,
+                    detected_count,
+                    recognized_count,
+                    unknown_count,
+                    avg_confidence,
+                    fps_average
+                )
 
                 if unknown_detected:
                     self.create_unknown_alert(processed_frame)
@@ -607,13 +794,12 @@ class SurveillanceFrame(ttk.Frame):
                 time.sleep(0.01)
         except Exception as error:
             self.queue_status(f"Camera error: {error}")
+            self.log_event(f"Unexpected camera exception: {error}", "ERROR")
         finally:
             camera.release()
             if self.camera is camera:
                 self.camera = None
             self.camera_running = False
-            if self.stop_event.is_set():
-                self.queue_status("Camera stopped.")
 
     def process_frame(self, frame):
         gray = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2GRAY)
@@ -624,7 +810,8 @@ class SurveillanceFrame(ttk.Frame):
             minSize=(70, 70),
         )
 
-        if len(faces) == 0:
+        detected_count = len(faces)
+        if detected_count == 0:
             self.cv2.putText(
                 frame,
                 "No Face",
@@ -634,61 +821,113 @@ class SurveillanceFrame(ttk.Frame):
                 (0, 0, 255),
                 2,
             )
-            return frame, False, "No Face", False
+            return frame, 0, 0, 0, None, False
 
+        processed_frame = frame.copy()
+        recognized_count = 0
+        unknown_count = 0
+        total_confidence = 0.0
+        confidence_samples = 0
         unknown_detected = False
 
         for (x, y, w, h) in faces:
-            face_gray = gray[y : y + h, x : x + w]
-            face_gray = self.cv2.resize(face_gray, (FACE_WIDTH, FACE_HEIGHT))
-            result = self.face_recognizer.recognize(face_gray)
+            # Crop face region
+            face_crop = gray[y : y + h, x : x + w]
+            
+            # Preprocess crop: resize to 200x200 & histogram equalize
+            try:
+                face_resized = self.cv2.resize(face_crop, (FACE_WIDTH, FACE_HEIGHT), interpolation=self.cv2.INTER_AREA)
+                face_equalized = self.cv2.equalizeHist(face_resized)
+                result = self.face_recognizer.recognize(face_equalized)
+            except Exception as ex:
+                self.log_event(f"Face processing error: {ex}", "WARNING")
+                continue
 
-            if result.is_known:
-                label = result.name
+            # Determine colors and text based on recognition status:
+            # Green (Recognized), Yellow (Low Confidence), Red (Unknown)
+            if result.status == "Recognized":
+                box_color = (0, 255, 0) # Green
+                recognized_count += 1
+                label = f"{result.name} ({result.person_type})"
+                # Log recognition event
+                self.log_event(f"Recognized student/teacher: {result.name} (Type: {result.person_type}, Dist: {result.confidence:.1f})", "INFO")
+                # Trigger attendance logging hook API
+                self.trigger_attendance_logging(result.person_id, result.person_type, result.name)
+            elif result.status == "Low Confidence":
+                box_color = (0, 255, 255) # Yellow
+                recognized_count += 1
+                label = f"Low Conf: {result.name}"
+                self.log_event(f"Low confidence match: {result.name} (Dist: {result.confidence:.1f})", "WARNING")
             else:
+                box_color = (0, 0, 255) # Red
+                unknown_count += 1
                 label = "Unknown"
                 unknown_detected = True
+                self.log_event(f"Unknown face detected (Dist: {result.confidence:.1f if result.confidence is not None else 'N/A'})", "WARNING")
 
-            confidence_label = ""
             if result.confidence is not None:
-                confidence_label = f" ({result.confidence:.1f})"
+                total_confidence += result.confidence
+                confidence_samples += 1
+                confidence_label = f"Dist: {result.confidence:.1f}"
+            else:
+                confidence_label = ""
 
-            self.cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 180, 0), 2)
+            # Draw box & labels on the colored frame
+            self.cv2.rectangle(processed_frame, (x, y), (x + w, y + h), box_color, 2)
             self.cv2.putText(
-                frame,
-                "Face Detected",
-                (x, max(y - 34, 24)),
+                processed_frame,
+                label,
+                (x, max(y - 10, 15)),
                 self.cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 180, 0),
+                0.6,
+                box_color,
                 2,
             )
-            self.cv2.putText(
-                frame,
-                f"{label}{confidence_label}",
-                (x, y + h + 28),
-                self.cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 255),
-                2,
-            )
+            if confidence_label:
+                self.cv2.putText(
+                    processed_frame,
+                    confidence_label,
+                    (x, y + h + 20),
+                    self.cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    box_color,
+                    2,
+                )
 
-        return frame, True, "Face Detected", unknown_detected
+        avg_confidence = total_confidence / confidence_samples if confidence_samples > 0 else None
+        status_text = "Face Detected"
+
+        return (
+            processed_frame,
+            detected_count,
+            recognized_count,
+            unknown_count,
+            avg_confidence,
+            unknown_detected
+        )
 
     def queue_frame(
         self,
         frame,
-        has_face: bool,
-        label_text: str,
+        detected_count: int,
+        recognized_count: int,
+        unknown_count: int,
+        avg_confidence: float | None,
         fps_value: float,
     ) -> None:
         try:
             if self.frame_queue.full():
                 self.frame_queue.get_nowait()
-            self.frame_queue.put_nowait(("frame", frame, has_face, label_text, fps_value))
-        except queue.Empty:
-            pass
-        except queue.Full:
+            self.frame_queue.put_nowait((
+                "frame",
+                frame,
+                detected_count,
+                recognized_count,
+                unknown_count,
+                avg_confidence,
+                fps_value
+            ))
+        except (queue.Empty, queue.Full):
             pass
 
     def queue_status(self, text: str) -> None:
@@ -711,9 +950,11 @@ class SurveillanceFrame(ttk.Frame):
             self.cv2.imwrite(image_path, frame)
             self.db.add_alert("Unknown face detected", image_path)
             self.queue_status("Unknown face detected. Alert saved.")
+            self.log_event("Saved unknown face alert screenshot to disk.", "WARNING")
             self.queue_alert_refresh()
-        except Exception:
+        except Exception as e:
             self.queue_status("Unknown face detected, but alert could not be saved.")
+            self.log_event(f"Failed to write alert screenshot: {e}", "ERROR")
 
     def queue_alert_refresh(self) -> None:
         try:
@@ -728,16 +969,30 @@ class SurveillanceFrame(ttk.Frame):
                 item_type = item[0]
 
                 if item_type == "frame":
-                    _, frame, has_face, label_text, fps_value = item
+                    (
+                        _,
+                        frame,
+                        detected_count,
+                        recognized_count,
+                        unknown_count,
+                        avg_confidence,
+                        fps_value
+                    ) = item
                     self.update_preview(frame)
                     self.last_frame = frame.copy()
-                    self.face_status.set(label_text)
-                    self.current_fps = fps_value
+                    
+                    self.counter_text.set(f"Detected: {detected_count}")
+                    self.recognized_counter_text.set(f"Recognized: {recognized_count}")
+                    self.unknown_counter_text.set(f"Unknown: {unknown_count}")
                     self.fps_text.set(f"FPS: {fps_value:.1f}")
 
-                    if has_face:
-                        self.detection_total += 1
-                        self.counter_text.set(f"Detections: {self.detection_total}")
+                    if avg_confidence is not None:
+                        self.average_confidence_text.set(f"Avg Dist: {avg_confidence:.1f}")
+                    else:
+                        self.average_confidence_text.set("Avg Dist: N/A")
+
+                    status_str = f"Tracking: {detected_count} face(s)" if detected_count > 0 else "No Face"
+                    self.face_status.set(status_str)
 
                 elif item_type == "status":
                     self.status_text.set(item[1])
@@ -782,8 +1037,10 @@ class SurveillanceFrame(ttk.Frame):
 
         if self.cv2.imwrite(image_path, self.last_frame):
             self.status_text.set(f"Screenshot saved: {image_path}")
+            self.log_event(f"Manual screenshot saved successfully to {image_path}.", "INFO")
             messagebox.showinfo("Screenshot", "Screenshot captured successfully.")
         else:
+            self.log_event(f"Manual screenshot write failed: {image_path}", "ERROR")
             messagebox.showerror("Screenshot", "Unable to save screenshot.")
 
     def load_alerts(self) -> None:
@@ -815,7 +1072,9 @@ class SurveillanceFrame(ttk.Frame):
             self.load_alerts()
             self.refresh_dashboard()
             self.status_text.set("Alerts cleared.")
+            self.log_event("Alert database cleared by user.", "INFO")
         except sqlite3.Error as error:
+            self.log_event(f"Failed to clear alerts database: {error}", "ERROR")
             messagebox.showerror("Database Error", str(error))
 
     def refresh_dashboard(self) -> None:
