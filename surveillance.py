@@ -136,7 +136,7 @@ class FutureFaceRecognizer:
         self.load()
 
     def load(self) -> None:
-        model_path = Path(MODEL_FOLDER) / "face_recognizer.yml"
+        model_path = Path(MODEL_FOLDER) / "trainer.yml"
         labels_path = Path(MODEL_FOLDER) / "labels.json"
 
         if not model_path.exists():
@@ -158,10 +158,13 @@ class FutureFaceRecognizer:
         if labels_path.exists():
             try:
                 raw_labels = json.loads(labels_path.read_text(encoding="utf-8"))
-                self.labels = {
-                    int(label_id): str(name)
-                    for label_id, name in raw_labels.items()
-                }
+                self.labels = {}
+                for label_id, val in raw_labels.items():
+                    if isinstance(val, dict):
+                        person_name = val.get("name", f"Person {label_id}")
+                    else:
+                        person_name = str(val)
+                    self.labels[int(label_id)] = person_name
             except (OSError, ValueError, TypeError):
                 self.labels = {}
 

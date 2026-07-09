@@ -86,6 +86,7 @@ class MainApplication:
         self.add_nav_button("Students", self.show_students)
         self.add_nav_button("Teachers", self.show_teachers)
         self.add_nav_button("Register Face", self.show_register_face)
+        self.add_nav_button("Face Training", self.show_face_training)
         self.add_nav_button("Surveillance", self.show_surveillance)
         self.add_nav_button("Attendance", self.show_attendance)
         self.add_nav_button("Reports", self.show_reports)
@@ -298,6 +299,14 @@ class MainApplication:
             "register_face",
             "RegisterFaceFrame",
             "Face Registration"
+        )
+
+    def show_face_training(self):
+
+        self.load_module(
+            "train_face",
+            "FaceTrainingFrame",
+            "Face Recognition Training"
         )
 
     def show_surveillance(self):
