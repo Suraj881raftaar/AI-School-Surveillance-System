@@ -1,4 +1,6 @@
-opencv-contrib-python
-pillow
-numpy
-openpyxl
+opencv-contrib-python>=4.5.0
+pillow>=8.0.0
+numpy>=1.19.0
+openpyxl>=3.0.0
+reportlab>=3.5.0
+pyinstaller>=4.0

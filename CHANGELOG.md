@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. This projec
 
 ---
 
+## [1.1.0] - 2026-07-09
+
+### Added
+* Refactored `dashboard.py` to create a modern 8-card overview panel showing totals, attendance ratios, matching accuracy rates, and confidence averages.
+* Added custom `AttendanceChart` canvas component to draw dynamic weekly trends bar charts natively.
+* Integrated sidebar navigation and sub-tabs notebook panels for reports, filters, system configurations, and backup operations.
+* Added ReportLab PDF Exporter to compile attendance summaries, headers, metadata, and security alert tables.
+* Programmed persistent Settings configuration and system indexes database manager inside `dashboard_repository.py`.
+* Created system backup zip utility packaging SQLite DB, models folders, datasets crop folders, and logs.
+* Added 5 markdown documentation files under `docs/` detailing dashboard, analytics, reports, settings, and backup structures.
+
+### Changed
+* Modified `main.py` constructor to load database settings dynamically on start and inject them into `config.py` namespaces.
+* Patched SQL Join queries inside `reports.py` to automatically resolve Roll Numbers and Employee IDs from category codes.
+
 ## [1.0.0] - 2026-07-09
 
 ### Added

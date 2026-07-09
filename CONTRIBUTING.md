@@ -1,35 +1,20 @@
-# Contributing Guidelines
+# Contributing Guide
 
-Thank you for contributing to the AI School Surveillance System! Please adhere to the following project standards and workflow guidelines.
-
----
-
-## Coding Standards
-
-* **Python Guidelines**: Follow PEP8 formatting. Use type hints for method definitions and specify docstrings for public classes and methods.
-* **Tkinter Best Practices**: Never execute blocking tasks (sleeps, DB requests, camera calls, loops) on the main thread. Always offload to background threads and communicate via thread-safe queues.
-* **Resource Lifecycles**: Ensure files, SQLite connections, and OpenCV camera resources are explicitly closed or released in `finally` blocks.
+Thank you for your interest in contributing to the AI School Surveillance System!
 
 ---
 
-## Git Workflow
-
-We use a one-feature-per-commit branching strategy to keep history clean.
-
-### Commit Messages format
-Prefix commit messages with the target Phase indicator:
-```
-Phase <X>: <Brief Feature Summary>
-```
-* Example: `Phase 3: Implement Face recognition training module`
+## 1. Code Review & Style Standards
+* All changes must adhere strictly to **PEP 8**.
+* Use explicit type hints and complete docstrings for all added classes/methods.
+* Ensure all functions are modular, small, and follow the SOLID principles.
+* Verify that SQLite queries are parameterized and database handles are closed inside `finally` blocks.
 
 ---
 
-## Pull Request Policy
+## 2. Development Workflow
 
-1. Always compile check code before submitting:
-   ```bash
-   python -m py_compile target_file.py
-   ```
-2. Verify that unit test cases pass.
-3. Keep changes minimal and isolated. Avoid repository-wide refactoring inside individual feature additions.
+1. Fork the repository and create your feature branch: `git checkout -b feature/amazing-feature`.
+2. Implement your features in logical, focused commits.
+3. Test your changes locally to guarantee no regressions or Tkinter main thread freezes.
+4. Open a Pull Request detailing your changes and test results.

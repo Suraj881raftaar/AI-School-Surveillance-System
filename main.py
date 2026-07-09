@@ -15,6 +15,8 @@ class MainApplication:
 
     def __init__(self):
 
+        self.inject_settings()
+
         self.root = tk.Tk()
 
         self.root.title(APP_NAME + " - Dashboard")
@@ -90,6 +92,7 @@ class MainApplication:
         self.add_nav_button("Surveillance", self.show_surveillance)
         self.add_nav_button("Attendance", self.show_attendance)
         self.add_nav_button("Reports", self.show_reports)
+        self.add_nav_button("Settings", self.show_settings)
 
         tk.Button(
             self.sidebar,
@@ -332,6 +335,26 @@ class MainApplication:
             "ReportsFrame",
             "Reports"
         )
+
+    def show_settings(self):
+
+        self.load_module(
+            "dashboard",
+            "SettingsFrame",
+            "Settings"
+        )
+
+    def inject_settings(self):
+        try:
+            import config
+            from settings_manager import SettingsManager
+            mgr = SettingsManager()
+            config.CAMERA_INDEX = int(mgr.get("camera_index"))
+            config.DATASET_FOLDER = mgr.get("dataset_path")
+            config.MODEL_FOLDER = mgr.get("model_path")
+            config.REPORT_FOLDER = mgr.get("export_path")
+        except Exception:
+            pass
 
     # =========================================
     # Dashboard Refresh

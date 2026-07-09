@@ -25,33 +25,35 @@
    ```
 
 3. **Install Dependencies**:
-   Install OpenCV with contrib modules to ensure LBPH Recognizer is available:
+   Install OpenCV with contrib modules to ensure LBPH Recognizer, ReportLab, and OpenPyXL are available:
    ```bash
-   pip install opencv-contrib-python pillow openpyxl numpy
+   pip install -r requirements.txt
    ```
 
-4. **Initialize Directory Tree**:
-   Run the database migration initializer script or start the app (which automatically creates required directories):
+4. **Initialize System**:
+   Start the app to auto-create directory trees, schemas, and configurations:
    ```bash
    python main.py
    ```
 
 ---
 
-## Folder Tree Layout
+## PyInstaller Packaging Steps
 
-```
-AI-School-Surveillance-System/
-├── config.py             # System Configurations
-├── main.py               # Main Navigation GUI
-├── register_face.py      # Camera Capturing & Registrations
-├── train_face.py         # LBPH Face Recognizer Model Training
-├── surveillance.py       # Live Recognition Dashboard
-├── database/             # SQLite DB File Storage
-├── dataset/              # Students & Teachers Crops
-│   ├── students/
-│   └── teachers/
-├── models/               # trainer.yml & labels.json Output
-├── logs/                 # training_log.txt & system logs
-└── docs/                 # Documentation Markdown Manuals
-```
+To bundle the application into a standalone Windows executable (`.exe`):
+
+1. **Install PyInstaller**:
+   ```bash
+   pip install pyinstaller
+   ```
+
+2. **Run PyInstaller with the spec file**:
+   ```bash
+   pyinstaller build.spec
+   ```
+
+3. **Locate Executable**:
+   The standalone executable will be generated inside the `dist/` directory.
+
+4. **Resource Assets**:
+   The `build.spec` automatically bundles the Haar Cascade XML files, icons, and PNG assets inside the binary.
