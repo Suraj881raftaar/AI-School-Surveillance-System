@@ -272,6 +272,7 @@ class SurveillanceFrame(ttk.Frame):
         self.unknown_counter_text = tk.StringVar(value="Unknown: 0")
         self.average_confidence_text = tk.StringVar(value="Conf Distance: N/A")
         self.confidence_threshold_var = tk.DoubleVar(value=65.0)
+        self.camera_index_var = tk.StringVar(value=str(CAMERA_INDEX))
         self.fps_text = tk.StringVar(value="FPS: 0.0")
 
         self.configure(style="Surveillance.TFrame")

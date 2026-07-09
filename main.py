@@ -10,6 +10,20 @@ import importlib
 
 from config import *
 
+# Packaging: static imports to ensure modules are bundled by PyInstaller
+import login
+import dashboard
+import students
+import teachers
+import register_face
+import train_face
+import surveillance
+import attendance
+import reports
+import settings_manager
+import dashboard_repository
+
+
 
 class MainApplication:
 
