@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file. This projec
 
 ---
 
+## [1.0.0] - 2026-07-09
+
+### Added
+* Refactored `attendance.py` into a professional, intelligent real-time attendance management system.
+* Implemented new database schema fields (`person_id`, `confidence`, `camera_id`, `recognition_method`, `status`) to attendance table with backwards compatibility.
+* Added memory-mapped cooldown lookup cache (`60` seconds default) and calendar date checks to prevent duplicate logs.
+* Added dynamic stats metrics tiles in the Attendance Management panel tree header.
+* Implemented multi-format report exports: CSV generation and professional Excel sheets utilizing `openpyxl`.
+* Created dedicated logs tracker `logs/attendance_log.txt`.
+* Added `docs/attendance.md` manual.
+
+### Changed
+* Integrated live surveillance streams in `surveillance.py` to trigger attendance logging via background thread pools.
+* Refactored `dashboard_repository.py` to explicitly close SQLite connections inside `finally` blocks, stopping resource leaks.
+
+---
+
 ## [1.0.0-rc3] - 2026-07-09
 
 ### Added

@@ -1,10 +1,10 @@
-# Phase 4 Task Checklist: Professional Live Face Recognition
+# Phase 5 Task Checklist: Professional AI Attendance Management
 
-- [x] 1. Load LBPH Recognizer (`surveillance.py` load `trainer.yml` and `labels.json` metadata safely, check for missing/corrupted files)
-- [x] 2. Thread-Safe Camera Preview (`surveillance.py` worker thread running cv2 capturing loop, reconnect support, graceful exit)
-- [x] 3. Recognition Pipeline (`surveillance.py` background crop face, resize to 200x200, grayscale, histogram equalization, prediction)
-- [x] 4. Visual Feedback & Bounding Boxes (Draw Green for Recognized, Red for Unknown, Yellow for Low Confidence)
-- [x] 5. Performance Metrics (FPS counter, detected count, recognized count, unknown count, speed optimization)
-- [x] 6. Expose Attendance Hooks (API stub/hooks ready for Phase 5)
-- [x] 7. Logging & Exception Safety (Logs recognition events, unknown detections, and errors to `logs/surveillance_log.txt`)
-- [x] 8. Self-Review & Verification (State transitions, thread-safe queue polling, CPU/RAM performance)
+- [x] 1. Expose Attendance database operations (`attendance.py` DB manager, connection closing try-finally, duplicate checks with configurable cooldown)
+- [x] 2. Integrate Surveillance with Attendance API (`surveillance.py` calling attendance logging, asynchronous non-blocking writes)
+- [x] 3. Real-Time UI & Attendance Panel (`attendance.py` frame layout, showing stats, search filters, tables, delete records)
+- [x] 4. Export Features (`attendance.py` exporting to CSV and Excel using openpyxl)
+- [x] 5. Dashboard Updates (`dashboard.py` and `dashboard_repository.py` to pull correct stats for students present, teachers present, unregistered faces)
+- [x] 6. Logging and Exception Safety (Logs records, cooldown drops, and database locking errors to `logs/attendance_log.txt`)
+- [x] 7. Documentation Generation (`docs/` files updates, README.md, CHANGELOG.md)
+- [x] 8. Self-Review & Verification (State transitions, thread-safe database connection teardowns, performance validations)

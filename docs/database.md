@@ -41,12 +41,15 @@ Logs daily surveillance recognitions and automated roll-call details.
 ```sql
 CREATE TABLE IF NOT EXISTS attendance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    person_id INTEGER NOT NULL,
-    person_type TEXT NOT NULL, -- 'Student' or 'Teacher'
-    name TEXT NOT NULL,
-    date TEXT NOT NULL,
-    time TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Present'
+    person_id INTEGER,
+    person_name TEXT,
+    person_type TEXT,
+    date TEXT,
+    time TEXT,
+    confidence REAL,
+    camera_id INTEGER,
+    recognition_method TEXT,
+    status TEXT
 );
 ```
 

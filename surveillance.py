@@ -509,12 +509,78 @@ class SurveillanceFrame(ttk.Frame):
         except Exception:
             pass
 
-    def trigger_attendance_logging(self, person_id: int, person_type: str, name: str) -> None:
+    def trigger_attendance_logging(self, person_id: int | None, person_type: str, name: str, confidence: float | None = None) -> None:
         """
-        API Hook for future attendance logging module (Phase 5).
-        Logs a recognized student/teacher transaction.
+        API Hook for attendance logging module (Phase 5).
+        Logs a recognized student/teacher transaction with duplicate prevention cooldown.
         """
-        print(f"[Attendance Hook] Exposing record to attendance tracker: {person_type} ID={person_id} Name={name}")
+        if person_id is None:
+            return
+
+        if not hasattr(self, "attendance_cooldowns"):
+            self.attendance_cooldowns: dict[tuple[int, str], float] = {}
+
+        # Configurable Cooldown (Default 60 seconds)
+        cooldown_seconds = 60.0
+        key = (person_id, person_type)
+        now = time.monotonic()
+        last_time = self.attendance_cooldowns.get(key, 0.0)
+
+        if now - last_time < cooldown_seconds:
+            # Duplicate detection: ignore record, write warning to console status
+            self.queue_status(f"Attendance Already Recorded for {name} ({person_type}) recently.")
+            return
+
+        self.attendance_cooldowns[key] = now
+
+        # Thread-safe async insertion
+        threading.Thread(
+            target=self.bg_record_attendance,
+            args=(person_id, name, person_type, confidence),
+            daemon=True
+        ).start()
+
+    def bg_record_attendance(self, person_id: int, name: str, person_type: str, confidence: float | None) -> None:
+        """Executes database attendance insertion in a background thread."""
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+
+        # Exposing status (Late vs Present)
+        # Future attendance schedules can make this dynamic. Default: "Present"
+        status = "Present"
+
+        try:
+            from attendance import AttendanceDB
+            db = AttendanceDB()
+
+            # Prevent writing duplicate entries on the same calendar date
+            if db.has_attendance_today(person_id, person_type, date_str):
+                self.queue_status(f"Attendance Already Recorded for {name} today.")
+                return
+
+            try:
+                cam_id = int(self.camera_index_var.get())
+            except Exception:
+                cam_id = 0
+
+            db.insert_record(
+                person_name=name,
+                person_type=person_type,
+                date=date_str,
+                time_value=time_str,
+                status=status,
+                person_id=person_id,
+                confidence=confidence,
+                camera_id=cam_id,
+                recognition_method="LBPH"
+            )
+            self.queue_status(f"Recorded attendance: {name} ({person_type})")
+            
+            # Notify alert list to refresh
+            self.queue_alert_refresh()
+        except Exception as e:
+            self.log_event(f"Failed to save background attendance: {e}", "ERROR")
 
     def log_event(self, message: str, level: str = "INFO") -> None:
         """Log event message to logs/surveillance_log.txt."""
@@ -852,7 +918,7 @@ class SurveillanceFrame(ttk.Frame):
                 # Log recognition event
                 self.log_event(f"Recognized student/teacher: {result.name} (Type: {result.person_type}, Dist: {result.confidence:.1f})", "INFO")
                 # Trigger attendance logging hook API
-                self.trigger_attendance_logging(result.person_id, result.person_type, result.name)
+                self.trigger_attendance_logging(result.person_id, result.person_type, result.name, result.confidence)
             elif result.status == "Low Confidence":
                 box_color = (0, 255, 255) # Yellow
                 recognized_count += 1

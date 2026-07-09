@@ -9,6 +9,8 @@ import csv
 import os
 import sqlite3
 import tkinter as tk
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
@@ -23,13 +25,30 @@ FILTER_TYPES = ("All", "Student", "Teacher")
 STATUSES = ("Present", "Absent", "Late")
 
 
+def log_attendance_event(message: str, level: str = "INFO") -> None:
+    """Log an attendance event to logs/attendance_log.txt."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_line = f"[{timestamp}] {level}: {message}\n"
+    os.makedirs(LOG_FOLDER, exist_ok=True)
+    log_file = os.path.join(LOG_FOLDER, "attendance_log.txt")
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(log_line)
+    except Exception:
+        pass
+
+
 @dataclass(frozen=True)
 class AttendanceRecord:
     record_id: int
+    person_id: int | None
     person_name: str
     person_type: str
     date: str
     time: str
+    confidence: float | None
+    camera_id: int | None
+    recognition_method: str | None
     status: str
 
 
@@ -41,7 +60,7 @@ class AttendanceDB:
         self.ensure_table()
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(DATABASE_PATH)
+        connection = sqlite3.connect(DATABASE_PATH, timeout=30.0)
         connection.row_factory = sqlite3.Row
         return connection
 
@@ -51,20 +70,28 @@ class AttendanceDB:
                 """
                 CREATE TABLE IF NOT EXISTS attendance(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    person_id INTEGER,
                     person_name TEXT,
                     person_type TEXT,
                     date TEXT,
                     time TEXT,
+                    confidence REAL,
+                    camera_id INTEGER,
+                    recognition_method TEXT,
                     status TEXT
                 )
                 """
             )
 
             required_columns = {
+                "person_id": "INTEGER",
                 "person_name": "TEXT",
                 "person_type": "TEXT",
                 "date": "TEXT",
                 "time": "TEXT",
+                "confidence": "REAL",
+                "camera_id": "INTEGER",
+                "recognition_method": "TEXT",
                 "status": "TEXT",
             }
             existing_columns = {
@@ -86,21 +113,126 @@ class AttendanceDB:
         date: str,
         time_value: str,
         status: str,
+        person_id: int | None = None,
+        confidence: float | None = None,
+        camera_id: int | None = None,
+        recognition_method: str | None = None,
     ) -> None:
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             conn.execute(
                 """
-                INSERT INTO attendance(person_name, person_type, date, time, status)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO attendance(
+                    person_id, person_name, person_type, date, time, confidence, camera_id, recognition_method, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (person_name, person_type, date, time_value, status),
+                (
+                    person_id,
+                    person_name,
+                    person_type,
+                    date,
+                    time_value,
+                    confidence,
+                    camera_id,
+                    recognition_method,
+                    status,
+                ),
             )
             conn.commit()
+            log_attendance_event(f"Database Inserted: {person_name} ({person_type}) - Status: {status}")
+        finally:
+            if conn:
+                conn.close()
 
     def delete_record(self, record_id: int) -> None:
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             conn.execute("DELETE FROM attendance WHERE id = ?", (record_id,))
             conn.commit()
+            log_attendance_event(f"Database Deleted: Record ID={record_id}")
+        finally:
+            if conn:
+                conn.close()
+
+    def has_attendance_today(self, person_id: int, person_type: str, date_str: str) -> bool:
+        conn = None
+        try:
+            conn = self.connect()
+            row = conn.execute(
+                """
+                SELECT 1 FROM attendance 
+                WHERE person_id = ? AND person_type = ? AND date = ? 
+                LIMIT 1
+                """,
+                (person_id, person_type, date_str)
+            ).fetchone()
+            return row is not None
+        finally:
+            if conn:
+                conn.close()
+
+    def get_today_metrics(self) -> dict[str, str | int]:
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        
+        conn = None
+        metrics = {
+            "total_today": 0,
+            "students_today": 0,
+            "teachers_today": 0,
+            "unknown_today": 0,
+            "last_person": "N/A",
+            "last_time": "N/A"
+        }
+        
+        try:
+            conn = self.connect()
+            
+            # 1. Total Today
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM attendance WHERE date = ?", (date_str,)
+            ).fetchone()
+            if row:
+                metrics["total_today"] = row["total"]
+                
+            # 2. Students Today
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM attendance WHERE date = ? AND person_type = 'Student'", (date_str,)
+            ).fetchone()
+            if row:
+                metrics["students_today"] = row["total"]
+                
+            # 3. Teachers Today
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM attendance WHERE date = ? AND person_type = 'Teacher'", (date_str,)
+            ).fetchone()
+            if row:
+                metrics["teachers_today"] = row["total"]
+                
+            # 4. Unknown Faces Today (from alerts)
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM alerts WHERE date = ?", (date_str,)
+            ).fetchone()
+            if row:
+                metrics["unknown_today"] = row["total"]
+                
+            # 5. Last Recorded
+            row = conn.execute(
+                "SELECT person_name, time FROM attendance WHERE date = ? ORDER BY id DESC LIMIT 1", (date_str,)
+            ).fetchone()
+            if row:
+                metrics["last_person"] = row["person_name"]
+                metrics["last_time"] = row["time"]
+        except sqlite3.Error:
+            pass
+        finally:
+            if conn:
+                conn.close()
+                
+        return metrics
 
     def fetch_records(
         self,
@@ -128,22 +260,31 @@ class AttendanceDB:
             where_sql = "WHERE " + " AND ".join(conditions)
 
         query = f"""
-            SELECT id, person_name, person_type, date, time, status
+            SELECT id, person_id, person_name, person_type, date, time, confidence, camera_id, recognition_method, status
             FROM attendance
             {where_sql}
             ORDER BY date DESC, time DESC, id DESC
         """
 
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             rows = conn.execute(query, params).fetchall()
+        finally:
+            if conn:
+                conn.close()
 
         return [
             AttendanceRecord(
                 record_id=int(row["id"]),
+                person_id=int(row["person_id"]) if row["person_id"] is not None else None,
                 person_name=row["person_name"] or "",
                 person_type=row["person_type"] or "",
                 date=row["date"] or "",
                 time=row["time"] or "",
+                confidence=float(row["confidence"]) if row["confidence"] is not None else None,
+                camera_id=int(row["camera_id"]) if row["camera_id"] is not None else None,
+                recognition_method=row["recognition_method"] or "",
                 status=row["status"] or "",
             )
             for row in rows
@@ -172,6 +313,13 @@ class AttendanceFrame(ttk.Frame):
         self.filter_type = tk.StringVar(value=FILTER_TYPES[0])
         self.total_text = tk.StringVar(value="Total Attendance: 0")
         self.status_text = tk.StringVar(value="Ready")
+
+        # Metrics vars
+        self.today_attendance_var = tk.StringVar(value="0")
+        self.students_present_var = tk.StringVar(value="0")
+        self.teachers_present_var = tk.StringVar(value="0")
+        self.unknown_faces_var = tk.StringVar(value="0")
+        self.last_attendance_var = tk.StringVar(value="N/A (N/A)")
 
         self.configure(style="Attendance.TFrame")
         self.configure_styles()
@@ -283,7 +431,7 @@ class AttendanceFrame(ttk.Frame):
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
             header,
-            text="Manage manual attendance records and generate reports.",
+            text="Manage attendance records, view real-time counts, and generate report exports.",
             style="AttendanceSubtitle.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(3, 0))
 
@@ -402,7 +550,7 @@ class AttendanceFrame(ttk.Frame):
         panel = ttk.Frame(self, style="AttendancePanel.TFrame", padding=18)
         panel.grid(row=1, column=1, sticky="nsew")
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(2, weight=1)
+        panel.grid_rowconfigure(3, weight=1)
 
         ttk.Label(
             panel,
@@ -410,8 +558,25 @@ class AttendanceFrame(ttk.Frame):
             style="AttendancePanelTitle.TLabel",
         ).grid(row=0, column=0, sticky="w", pady=(0, 12))
 
+        # Metrics Bar Row
+        metrics_bar = ttk.Frame(panel, style="AttendancePanel.TFrame")
+        metrics_bar.grid(row=1, column=0, sticky="ew", pady=(0, 14))
+        metrics_bar.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+
+        def make_metric_tile(parent, title, var, col):
+            tile = tk.Frame(parent, bg="white", bd=1, relief="solid", padx=6, pady=4)
+            tile.grid(row=0, column=col, padx=4, sticky="nsew")
+            tk.Label(tile, text=title, bg="white", fg="#555555", font=("Arial", 9, "bold")).pack()
+            tk.Label(tile, textvariable=var, bg="white", fg=BUTTON_COLOR, font=("Arial", 11, "bold")).pack(pady=(2,0))
+
+        make_metric_tile(metrics_bar, "Today's Count", self.today_attendance_var, 0)
+        make_metric_tile(metrics_bar, "Students Present", self.students_present_var, 1)
+        make_metric_tile(metrics_bar, "Teachers Present", self.teachers_present_var, 2)
+        make_metric_tile(metrics_bar, "Unregistered Alert", self.unknown_faces_var, 3)
+        make_metric_tile(metrics_bar, "Last Attendance", self.last_attendance_var, 4)
+
         filter_frame = ttk.Frame(panel, style="AttendancePanel.TFrame")
-        filter_frame.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        filter_frame.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         filter_frame.grid_columnconfigure(0, weight=2)
         filter_frame.grid_columnconfigure(1, weight=1)
         filter_frame.grid_columnconfigure(2, weight=1)
@@ -445,10 +610,17 @@ class AttendanceFrame(ttk.Frame):
             text="Export CSV",
             command=self.export_csv,
             style="Primary.TButton",
-        ).grid(row=0, column=4)
+        ).grid(row=0, column=4, padx=(0, 8))
+
+        ttk.Button(
+            filter_frame,
+            text="Export Excel",
+            command=self.export_excel,
+            style="Success.TButton",
+        ).grid(row=0, column=5)
 
         table_frame = ttk.Frame(panel, style="AttendancePanel.TFrame")
-        table_frame.grid(row=2, column=0, sticky="nsew")
+        table_frame.grid(row=3, column=0, sticky="nsew")
         table_frame.grid_columnconfigure(0, weight=1)
         table_frame.grid_rowconfigure(0, weight=1)
 
@@ -562,6 +734,20 @@ class AttendanceFrame(ttk.Frame):
         self.total_text.set(f"Total Attendance: {len(records)}")
         self.status_text.set(f"Loaded {len(records)} attendance record(s).")
 
+        # Reload metrics dynamically
+        try:
+            metrics = self.db.get_today_metrics()
+            self.today_attendance_var.set(str(metrics["total_today"]))
+            self.students_present_var.set(str(metrics["students_today"]))
+            self.teachers_present_var.set(str(metrics["teachers_today"]))
+            self.unknown_faces_var.set(str(metrics["unknown_today"]))
+            
+            last_p = metrics["last_person"]
+            last_t = metrics["last_time"]
+            self.last_attendance_var.set(f"{last_p} ({last_t})")
+        except Exception:
+            pass
+
     def populate_table(self, records: list[AttendanceRecord]) -> None:
         for item_id in self.table.get_children():
             self.table.delete(item_id)
@@ -618,22 +804,134 @@ class AttendanceFrame(ttk.Frame):
         try:
             with open(file_path, "w", newline="", encoding="utf-8") as csv_file:
                 writer = csv.writer(csv_file)
-                writer.writerow(["ID", "Name", "Type", "Date", "Time", "Status"])
+                writer.writerow([
+                    "Record ID", "Person ID", "Name", "Type", 
+                    "Date", "Time", "Confidence", "Camera ID", 
+                    "Recognition Method", "Status"
+                ])
                 for record in self.current_records:
-                    writer.writerow(
-                        [
-                            record.record_id,
-                            record.person_name,
-                            record.person_type,
-                            record.date,
-                            record.time,
-                            record.status,
-                        ]
-                    )
+                    writer.writerow([
+                        record.record_id,
+                        record.person_id if record.person_id is not None else "",
+                        record.person_name,
+                        record.person_type,
+                        record.date,
+                        record.time,
+                        record.confidence if record.confidence is not None else "",
+                        record.camera_id if record.camera_id is not None else "",
+                        record.recognition_method or "",
+                        record.status
+                    ])
             self.status_text.set(f"CSV exported: {file_path}")
+            log_attendance_event(f"CSV exported successfully to {file_path}.")
             messagebox.showinfo("Export CSV", "Attendance exported successfully.")
         except OSError as error:
+            log_attendance_event(f"CSV export failed: {error}", "ERROR")
             messagebox.showerror("Export CSV", str(error))
+
+    def export_excel(self) -> None:
+        if not self.current_records:
+            messagebox.showwarning("Export Excel", "No attendance records to export.")
+            return
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, Alignment, PatternFill
+        except ImportError:
+            messagebox.showerror(
+                "Export Excel Error",
+                "openpyxl is required to export Excel files.\n\nPlease run: pip install openpyxl"
+            )
+            return
+
+        os.makedirs(REPORT_FOLDER, exist_ok=True)
+        default_name = f"attendance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        file_path = filedialog.asksaveasfilename(
+            title="Export Attendance Excel",
+            defaultextension=".xlsx",
+            initialdir=REPORT_FOLDER,
+            initialfile=default_name,
+            filetypes=(("Excel Files", "*.xlsx"), ("All Files", "*.*")),
+        )
+
+        if not file_path:
+            return
+
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Attendance Summary"
+            ws.views.sheetView[0].showGridLines = True
+
+            headers = [
+                "Record ID", "Person ID", "Name", "Type", 
+                "Date", "Time", "Confidence (Dist)", "Camera ID", 
+                "Method", "Status"
+            ]
+            ws.append(headers)
+
+            # Style headers: blue fill, white text, bold
+            header_font = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")
+            header_align = Alignment(horizontal="center", vertical="center")
+
+            for col_idx in range(1, 11):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_align
+
+            row_font = Font(name="Segoe UI", size=10)
+            center_align = Alignment(horizontal="center")
+            left_align = Alignment(horizontal="left")
+
+            for record in self.current_records:
+                row_data = [
+                    record.record_id,
+                    record.person_id if record.person_id is not None else "",
+                    record.person_name,
+                    record.person_type,
+                    record.date,
+                    record.time,
+                    record.confidence if record.confidence is not None else "",
+                    record.camera_id if record.camera_id is not None else "",
+                    record.recognition_method or "",
+                    record.status
+                ]
+                ws.append(row_data)
+
+                # Set alignment and font
+                curr_row = ws.max_row
+                ws.cell(row=curr_row, column=1).alignment = center_align
+                ws.cell(row=curr_row, column=2).alignment = center_align
+                ws.cell(row=curr_row, column=3).alignment = left_align
+                ws.cell(row=curr_row, column=4).alignment = center_align
+                ws.cell(row=curr_row, column=5).alignment = center_align
+                ws.cell(row=curr_row, column=6).alignment = center_align
+                ws.cell(row=curr_row, column=7).alignment = center_align
+                ws.cell(row=curr_row, column=8).alignment = center_align
+                ws.cell(row=curr_row, column=9).alignment = center_align
+                ws.cell(row=curr_row, column=10).alignment = center_align
+
+                for col_idx in range(1, 11):
+                    ws.cell(row=curr_row, column=col_idx).font = row_font
+
+            # Auto column dimensions
+            for col in ws.columns:
+                max_len = 0
+                col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                for cell in col:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+                ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
+
+            wb.save(file_path)
+            self.status_text.set(f"Excel exported: {file_path}")
+            log_attendance_event(f"Excel exported successfully to {file_path}.")
+            messagebox.showinfo("Export Excel", "Attendance exported successfully to Excel workbook.")
+        except Exception as error:
+            log_attendance_event(f"Excel export failed: {error}", "ERROR")
+            messagebox.showerror("Export Excel Error", str(error))
 
     def print_report(self) -> None:
         if not self.current_records:

@@ -26,6 +26,7 @@ Detailed architectural drawings, schema definitions, and design workflows are av
 * [QA & Test Cases](docs/testing.md)
 * [Deployment Guide](docs/deployment.md)
 * [Security Controls](docs/security.md)
+* [Attendance Manual](docs/attendance.md)
 
 ---
 
