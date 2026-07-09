@@ -47,7 +47,9 @@ class SurveillanceDB:
         return connection
 
     def ensure_alerts_table(self) -> None:
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS alerts(
@@ -81,13 +83,20 @@ class SurveillanceDB:
                     )
 
             conn.commit()
+        except sqlite3.Error:
+            pass
+        finally:
+            if conn:
+                conn.close()
 
     def add_alert(self, message: str, image_path: str) -> None:
         now = datetime.now()
         date_text = now.strftime("%Y-%m-%d")
         time_text = now.strftime("%H:%M:%S")
 
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             conn.execute(
                 """
                 INSERT INTO alerts(
@@ -105,9 +114,16 @@ class SurveillanceDB:
                 ),
             )
             conn.commit()
+        except sqlite3.Error:
+            pass
+        finally:
+            if conn:
+                conn.close()
 
     def get_alerts(self) -> list[sqlite3.Row]:
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             return list(
                 conn.execute(
                     """
@@ -121,11 +137,23 @@ class SurveillanceDB:
                     """
                 ).fetchall()
             )
+        except sqlite3.Error:
+            return []
+        finally:
+            if conn:
+                conn.close()
 
     def clear_alerts(self) -> None:
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             conn.execute("DELETE FROM alerts")
             conn.commit()
+        except sqlite3.Error:
+            pass
+        finally:
+            if conn:
+                conn.close()
 
 
 class FutureFaceRecognizer:

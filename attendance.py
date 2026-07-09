@@ -65,7 +65,9 @@ class AttendanceDB:
         return connection
 
     def ensure_table(self) -> None:
-        with self.connect() as conn:
+        conn = None
+        try:
+            conn = self.connect()
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS attendance(
@@ -105,6 +107,11 @@ class AttendanceDB:
                     )
 
             conn.commit()
+        except sqlite3.Error:
+            pass
+        finally:
+            if conn:
+                conn.close()
 
     def insert_record(
         self,

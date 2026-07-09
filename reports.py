@@ -443,9 +443,9 @@ class ReportsFrame(ttk.Frame):
                 ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
 
             wb.save(filename)
-            messagebox.showinfo("Success", "Excel file exported successfully.")
+            self.after(0, messagebox.showinfo, "Success", "Excel file exported successfully.")
         except Exception as e:
-            messagebox.showerror("Export Error", str(e))
+            self.after(0, messagebox.showerror, "Export Error", str(e))
 
     def export_pdf(self) -> None:
         if not self.attendance_records and not self.alert_records:
@@ -473,7 +473,9 @@ class ReportsFrame(ttk.Frame):
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib import colors
         except ImportError:
-            messagebox.showerror(
+            self.after(
+                0,
+                messagebox.showerror,
                 "Missing Library",
                 "reportlab is required to export PDF files.\n\nPlease install it using:\npip install reportlab"
             )
@@ -574,6 +576,6 @@ class ReportsFrame(ttk.Frame):
                 story.append(t_alert)
 
             doc.build(story)
-            messagebox.showinfo("Success", "PDF report file generated successfully.")
+            self.after(0, messagebox.showinfo, "Success", "PDF report file generated successfully.")
         except Exception as e:
-            messagebox.showerror("Export PDF Error", str(e))
+            self.after(0, messagebox.showerror, "Export PDF Error", str(e))

@@ -477,6 +477,7 @@ class FaceTrainingFrame(ttk.Frame):
         """Fetch rows and folders to count dataset files."""
         students_count = 0
         teachers_count = 0
+        conn = None
         try:
             conn = sqlite3.connect(DATABASE_PATH)
             conn.row_factory = sqlite3.Row
@@ -485,9 +486,11 @@ class FaceTrainingFrame(ttk.Frame):
             students_count = cur.fetchone()[0]
             cur.execute("SELECT COUNT(*) FROM teachers")
             teachers_count = cur.fetchone()[0]
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn:
+                conn.close()
 
         student_dirs = 0
         teacher_dirs = 0

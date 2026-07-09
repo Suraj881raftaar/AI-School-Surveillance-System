@@ -408,9 +408,9 @@ class SettingsFrame(ttk.Frame):
                 models=self.models_backup_var.get(),
                 logs=self.logs_backup_var.get()
             )
-            messagebox.showinfo("Backup Success", f"Backup zip file created successfully:\n{zip_path}")
+            self.after(0, messagebox.showinfo, "Backup Success", f"Backup zip file created successfully:\n{zip_path}")
         except Exception as e:
-            messagebox.showerror("Backup Error", f"An error occurred during backup creation:\n{e}")
+            self.after(0, messagebox.showerror, "Backup Error", f"An error occurred during backup creation:\n{e}")
 
     def run_restore(self) -> None:
         zip_path = filedialog.askopenfilename(
