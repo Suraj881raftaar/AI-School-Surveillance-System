@@ -263,8 +263,9 @@ class CameraController:
                         else:
                             cv2.putText(frame, "Pipeline Processing Error", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-                # Convert BGR frame to RGB for Tkinter compatibility before queueing
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Resize and convert BGR frame to RGB for Tkinter compatibility before queueing
+                frame_resized = cv2.resize(frame, (700, 500), interpolation=cv2.INTER_LINEAR)
+                frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
 
                 # Send frame data to UI safely using non-blocking put with oldest discard
                 try:
@@ -616,8 +617,6 @@ class RegisterFaceFrame(ttk.Frame):
                     self.progress_bar["value"] = count
 
                     img = Image.fromarray(frame)
-                    # Resize preview frame to fit layout
-                    img = img.resize((700, 500))
                     photo = ImageTk.PhotoImage(image=img)
                     
                     self.camera_label.configure(image=photo)
