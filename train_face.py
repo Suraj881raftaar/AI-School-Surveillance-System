@@ -158,19 +158,16 @@ class TrainingWorker(threading.Thread):
                     continue
 
                 # Read image
-                img = cv2.imread(abs_img_path, cv2.IMREAD_GRAYSCALE)
-                if img is None or img.size == 0:
+                img_raw = cv2.imread(abs_img_path, cv2.IMREAD_GRAYSCALE)
+                if img_raw is None or img_raw.size == 0:
                     self.log(f"Skipped corrupted/empty image: {img_path}", "WARNING")
                     skipped_count += 1
                     processed_count += 1
                     continue
 
-                # Reject wrong dimensions
-                if img.shape != (FACE_WIDTH, FACE_HEIGHT):
-                    self.log(f"Skipped image with wrong dimensions {img.shape}: {img_path}", "WARNING")
-                    skipped_count += 1
-                    processed_count += 1
-                    continue
+                # Preprocess: resize to match recognition dimensions and run histogram equalization
+                img_resized = cv2.resize(img_raw, (FACE_WIDTH, FACE_HEIGHT), interpolation=cv2.INTER_AREA)
+                img = cv2.equalizeHist(img_resized)
 
                 # Reject blurry images
                 blur_val = cv2.Laplacian(img, cv2.CV_64F).var()

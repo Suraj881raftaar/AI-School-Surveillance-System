@@ -231,10 +231,8 @@ class FutureFaceRecognizer:
                 person_id = label_id - 1000
 
         # LBPH output is distance metric (smaller = more confident)
-        if confidence < self.confidence_threshold:
+        if confidence <= self.confidence_threshold:
             return DetectionResult(name, float(confidence), True, person_type, "Recognized", person_id)
-        elif confidence < self.low_confidence_threshold:
-            return DetectionResult(name, float(confidence), True, person_type, "Low Confidence", person_id)
         else:
             return DetectionResult("Unknown", float(confidence), False, "Unknown", "Unknown", None)
 
@@ -939,26 +937,33 @@ class SurveillanceFrame(ttk.Frame):
                 continue
 
             # Determine colors and text based on recognition status:
-            # Green (Recognized), Yellow (Low Confidence), Red (Unknown)
+            # Green (Recognized), Red (Unknown)
             if result.status == "Recognized":
                 box_color = (0, 255, 0) # Green
                 recognized_count += 1
                 label = f"{result.name} ({result.person_type})"
-                # Log recognition event
-                self.log_event(f"Recognized student/teacher: {result.name} (Type: {result.person_type}, Dist: {result.confidence:.1f})", "INFO")
+                # Log recognition event with 10s cooldown to prevent disk flooding
+                if not hasattr(self, "last_recognition_logs"):
+                    self.last_recognition_logs = {}
+                now_time = time.monotonic()
+                log_key = (result.person_id, result.person_type)
+                if now_time - self.last_recognition_logs.get(log_key, 0.0) >= 10.0:
+                    self.log_event(f"Recognized student/teacher: {result.name} (Type: {result.person_type}, Dist: {result.confidence:.1f})", "INFO")
+                    self.last_recognition_logs[log_key] = now_time
                 # Trigger attendance logging hook API
                 self.trigger_attendance_logging(result.person_id, result.person_type, result.name, result.confidence)
-            elif result.status == "Low Confidence":
-                box_color = (0, 255, 255) # Yellow
-                recognized_count += 1
-                label = f"Low Conf: {result.name}"
-                self.log_event(f"Low confidence match: {result.name} (Dist: {result.confidence:.1f})", "WARNING")
             else:
                 box_color = (0, 0, 255) # Red
                 unknown_count += 1
                 label = "Unknown"
                 unknown_detected = True
-                self.log_event(f"Unknown face detected (Dist: {result.confidence:.1f if result.confidence is not None else 'N/A'})", "WARNING")
+                # Log unknown face event with 10s cooldown to prevent disk flooding
+                if not hasattr(self, "last_unknown_log_time"):
+                    self.last_unknown_log_time = 0.0
+                now_time = time.monotonic()
+                if now_time - self.last_unknown_log_time >= 10.0:
+                    self.log_event(f"Unknown face detected (Dist: {result.confidence:.1f if result.confidence is not None else 'N/A'})", "WARNING")
+                    self.last_unknown_log_time = now_time
 
             if result.confidence is not None:
                 total_confidence += result.confidence
@@ -1008,14 +1013,21 @@ class SurveillanceFrame(ttk.Frame):
         recognized_count: int,
         unknown_count: int,
         avg_confidence: float | None,
-        fps_value: float,
+        fps_value: float
     ) -> None:
         try:
             if self.frame_queue.full():
                 self.frame_queue.get_nowait()
+            
+            # Fast OpenCV resize in the worker thread to offload GUI thread
+            if self.cv2 is not None:
+                resized_frame = self.cv2.resize(frame, (640, 360), interpolation=self.cv2.INTER_LINEAR)
+            else:
+                resized_frame = frame
+
             self.frame_queue.put_nowait((
                 "frame",
-                frame,
+                resized_frame,
                 detected_count,
                 recognized_count,
                 unknown_count,
@@ -1106,10 +1118,6 @@ class SurveillanceFrame(ttk.Frame):
 
         rgb_frame = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
         image = self.image_module.fromarray(rgb_frame)
-
-        preview_width = max(self.preview_label.winfo_width(), 640)
-        preview_height = max(self.preview_label.winfo_height(), 420)
-        image.thumbnail((preview_width, preview_height))
 
         self.preview_image = self.image_tk_module.PhotoImage(image=image)
         self.preview_label.configure(image=self.preview_image, text="")
